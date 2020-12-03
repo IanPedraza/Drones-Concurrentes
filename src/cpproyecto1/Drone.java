@@ -5,11 +5,13 @@ import java.util.ArrayList;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.CyclicBarrier;
+import javax.swing.JOptionPane;
 
 public class Drone extends Thread {
 
     private boolean alive;
-    
+
     private int pasoX = 6;
     private int pasoY = 6;
 
@@ -26,124 +28,137 @@ public class Drone extends Thread {
     private final Map map;
     private final DroneNumber droneNumber;
     private final Graphic graphic;
-    
+    private final Settings settings;
+
     private int x;
     private int y;
 
     private final Semaphore semaphore;
     private final Lock mutex;
+    private final VC vc;
+    private final Barrier barrier;
 
-    private final ArrayList<Double> datosX;
-    private final ArrayList<Double> datosY;
-    
-    public Drone(Map map, Graphic graphic, DroneNumber droneNumber, Lock mutex, Semaphore semaphore, int x, int y, int minWidth, int minHeight, int maxWidth, int maxHeight, ArrayList<Double> datosX, ArrayList<Double> datosY) {
+    public Drone(Settings settings, Map map, Graphic graphic, DroneNumber droneNumber, Lock mutex, Semaphore semaphore, VC vc, Barrier barrier) {
         this.alive = false;
-        
+
         this.map = map;
         this.graphic = graphic;
-        
-        //this.semaphore = new Semaphore(1);
-        //this.mutex = new ReentrantLock();
-        
+        this.settings = settings;
+
+        /*
+         this.semaphore = new Semaphore(1);
+         this.mutex = new ReentrantLock();
+         this.vc = new VC();
+         this.barrier = new Barrier(1);
+         */
         this.semaphore = semaphore;
         this.mutex = mutex;
-        
-        this.datosX = datosX;
-        this.datosY = datosY;
-        
+        this.vc = vc;
+        this.barrier = barrier;
+
         this.droneNumber = droneNumber;
-        this.x = x;
-        this.y = y;
+        this.x = 0;
+        this.y = 0;
 
-        this.minWidth = minWidth;
-        this.minHeight = minHeight;
+        this.minWidth = 0;
+        this.minHeight = 0;
 
-        this.maxWidth = maxWidth - padding;
-        this.maxHeight = maxHeight - padding;
-        
+        this.maxWidth = 0 - padding;
+        this.maxHeight = 0 - padding;
+
         //this.index = 0;
     }
 
     @Override
-    public synchronized void run() {
+    public void run() {
         alive = true;
-        
+
         while (alive) {
-            if (map.isPause()) {
-                try { Thread.sleep((int) (Math.random() * map.getSpeed())); }
-                catch (Exception e) {}
+            if (settings.isPause()) {
+                try {
+                    Thread.sleep((int) (Math.random() * settings.getSpeed()));
+                } catch (Exception e) {
+                }
             } else {
                 performAction();
             }
         }
 
     }
-    
+
     private void performAction() {
-        switch(map.getSynchronizeOption()) {
+        switch (settings.getSynchronizeOption()) {
             case NONE:
                 none();
                 break;
-            
-            case MUTEX: 
+
+            case MUTEX:
                 mutex();
                 break;
-                
-            case SEMAPHORE: 
+
+            case SEMAPHORE:
                 semaphore();
                 break;
-                
-            case VC: 
+
+            case CONDITIONS:
+                condition();
                 break;
-                
-            case MONITORS: 
+
+            case MONITORS:
+                monitors();
                 break;
-                
-            case GATES: 
-            break;
-                
+
+            case BARRIER:
+                barrier();
+                break;
+
         }
     }
-    
+
     private void move() {
         if (x < minWidth || x >= maxWidth) {
             pasoX *= -1;
-        } 
-        
+        }
+
         if (y < minHeight || y >= maxHeight) {
             pasoY *= -1;
         }
 
         x += pasoX;
         y += pasoY;
-        
-        if (map.isGraphicEnable()) graphic();
-        
+
+        if (settings.isGraphicEnable()) {
+            try {
+                graphic();
+            } catch (Exception e) {
+                settings.setPause(true);
+                JOptionPane.showMessageDialog(null, "Dos o más hilos entrarón en sección crítica");
+            }
+        }
+
         map.repaint();
-        
-        try { Thread.sleep((int) (Math.random() * map.getSpeed())); }
-        catch (Exception e) {}
+
+        try {
+            Thread.sleep((int) (200 + Math.random() * settings.getSpeed()));
+        } catch (Exception e) {
+        }
     }
-    
-    
+
     private void graphic() {
-        //datosX.add((double) x);
-        //datosY.add((double) y);
         graphic.addToGraphic(droneNumber.getNumber());
-        //graphic.actualizar(datosX, datosY);
     }
-    
-     private void none() {
+
+    private void none() {
         move();
     }
-    
+
     private void semaphore() {
         if (semaphore.tryAcquire()) {
             move();
             semaphore.release();
         }
     }
-    
+
     private void mutex() {
         if (mutex.tryLock()) {
             try {
@@ -152,6 +167,39 @@ public class Drone extends Thread {
                 mutex.unlock();
             }
         }
+    }
+
+    private void condition() {
+        if (vc.trylock()) {
+            try {
+                while (!vc.isAvailable()) {
+                    try {
+                        vc.await();
+                    } catch (Exception ignore) {
+                    }
+                }
+
+                vc.setAvailable(false);
+                move();
+                vc.signal();
+            } catch (Exception ignore) {
+
+            } finally {
+                vc.setAvailable(true);
+                vc.unlock();
+            }
+        }
+    }
+
+    private void monitors() {
+        synchronized(this){
+            move();
+        }
+    }
+
+    private void barrier() {
+        barrier.call();
+        move();
     }
 
     public int getX() {
@@ -210,5 +258,5 @@ public class Drone extends Thread {
         alive = false;
         this.interrupt();
     }
-    
+
 }

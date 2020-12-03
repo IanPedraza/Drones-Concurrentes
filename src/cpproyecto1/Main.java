@@ -12,15 +12,11 @@ import java.util.concurrent.locks.ReentrantLock;
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
 
-public class Main extends javax.swing.JFrame {
-    //988
-
-    private static final int DATA_SIZE = 10;
-    private final ArrayList<Double> datosX;
-    private final ArrayList<Double> datosY;
-
+public class Main extends javax.swing.JFrame implements OnPauseListener, OnRateListener, OnSpeedChangeListener {
+    
     private final Map map;
     private final Graphic graphic;
+    private final Settings settings;
 
     private BufferedImage background;
 
@@ -32,13 +28,15 @@ public class Main extends javax.swing.JFrame {
 
     private final Lock mutex;
     private final Semaphore semaphore;
+    private final VC vc;
+    private final Barrier barrier;
 
     public Main() {
         initComponents();
         setResizable(false);
         setLocationRelativeTo(null);
         setTitle("Drones");
-        
+
         ImageIcon icon = new ImageIcon("images/icon.png");
         setIconImage(icon.getImage());
 
@@ -48,13 +46,14 @@ public class Main extends javax.swing.JFrame {
             System.out.println("No se pudo cargar el fondo");
         }
 
-        //datosX = new double[DATA_SIZE];
-        //datosY = new double[DATA_SIZE];
-        datosX = new ArrayList();
-        datosY = new ArrayList();
-
         mutex = new ReentrantLock();
         semaphore = new Semaphore(1);
+        vc = new VC();
+        barrier = new Barrier(1);
+        settings = new Settings();
+        settings.setOnPauseListener(this);
+        settings.setOnSpeedChangeListener(this);
+        jLabel2.setText("Speed: " + (settings.DEAFULT_SPEED - settings.getSpeed()));
 
         drones = new ArrayList();
 
@@ -64,6 +63,7 @@ public class Main extends javax.swing.JFrame {
         add(map);
 
         graphic = new Graphic();
+        graphic.setOnRateListener(this);
         graphic.setBounds(815, 32, 600, 580);
         add(graphic);
     }
@@ -74,14 +74,18 @@ public class Main extends javax.swing.JFrame {
 
         sinchronizeOptions = new javax.swing.ButtonGroup();
         jToolBar1 = new javax.swing.JToolBar();
-        jButton3 = new javax.swing.JButton();
         jButton4 = new javax.swing.JButton();
+        jButton3 = new javax.swing.JButton();
         jSeparator2 = new javax.swing.JToolBar.Separator();
         jButton1 = new javax.swing.JButton();
         jButton2 = new javax.swing.JButton();
         jButton5 = new javax.swing.JButton();
         jSeparator3 = new javax.swing.JToolBar.Separator();
         jButton6 = new javax.swing.JButton();
+        jToolBar2 = new javax.swing.JToolBar();
+        jLabel2 = new javax.swing.JLabel();
+        jLabel3 = new javax.swing.JLabel();
+        jLabel1 = new javax.swing.JLabel();
         jMenuBar1 = new javax.swing.JMenuBar();
         jMenu1 = new javax.swing.JMenu();
         jMenuItem6 = new javax.swing.JMenuItem();
@@ -105,7 +109,7 @@ public class Main extends javax.swing.JFrame {
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setTitle("Panel");
         setBackground(new java.awt.Color(255, 255, 255));
-        setPreferredSize(new java.awt.Dimension(1423, 678));
+        setPreferredSize(new java.awt.Dimension(1423, 710));
 
         jToolBar1.setBackground(new java.awt.Color(255, 255, 255));
         jToolBar1.setBorder(javax.swing.BorderFactory.createCompoundBorder());
@@ -113,18 +117,6 @@ public class Main extends javax.swing.JFrame {
         jToolBar1.setRollover(true);
         jToolBar1.setInheritsPopupMenu(true);
         jToolBar1.setPreferredSize(new java.awt.Dimension(1423, 25));
-
-        jButton3.setBackground(new java.awt.Color(255, 255, 255));
-        jButton3.setIcon(new javax.swing.ImageIcon(getClass().getResource("/cpproyecto1/images/plus.png"))); // NOI18N
-        jButton3.setFocusable(false);
-        jButton3.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
-        jButton3.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
-        jButton3.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jButton3ActionPerformed(evt);
-            }
-        });
-        jToolBar1.add(jButton3);
 
         jButton4.setBackground(new java.awt.Color(255, 255, 255));
         jButton4.setIcon(new javax.swing.ImageIcon(getClass().getResource("/cpproyecto1/images/minus.png"))); // NOI18N
@@ -138,6 +130,18 @@ public class Main extends javax.swing.JFrame {
             }
         });
         jToolBar1.add(jButton4);
+
+        jButton3.setBackground(new java.awt.Color(255, 255, 255));
+        jButton3.setIcon(new javax.swing.ImageIcon(getClass().getResource("/cpproyecto1/images/plus.png"))); // NOI18N
+        jButton3.setFocusable(false);
+        jButton3.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jButton3.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jButton3.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButton3ActionPerformed(evt);
+            }
+        });
+        jToolBar1.add(jButton3);
         jToolBar1.add(jSeparator2);
 
         jButton1.setBackground(new java.awt.Color(255, 255, 255));
@@ -188,6 +192,21 @@ public class Main extends javax.swing.JFrame {
             }
         });
         jToolBar1.add(jButton6);
+
+        jToolBar2.setBackground(new java.awt.Color(255, 255, 255));
+        jToolBar2.setFloatable(false);
+        jToolBar2.setRollover(true);
+
+        jLabel2.setForeground(new java.awt.Color(0, 0, 0));
+        jLabel2.setText("Speed: 0");
+        jToolBar2.add(jLabel2);
+
+        jLabel3.setText("          ");
+        jToolBar2.add(jLabel3);
+
+        jLabel1.setForeground(new java.awt.Color(0, 0, 0));
+        jLabel1.setText("Rate: 0%");
+        jToolBar2.add(jLabel1);
 
         jMenu1.setText("File");
 
@@ -331,12 +350,14 @@ public class Main extends javax.swing.JFrame {
         layout.setHorizontalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addComponent(jToolBar1, javax.swing.GroupLayout.DEFAULT_SIZE, 951, Short.MAX_VALUE)
+            .addComponent(jToolBar2, javax.swing.GroupLayout.DEFAULT_SIZE, 951, Short.MAX_VALUE)
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(layout.createSequentialGroup()
                 .addComponent(jToolBar1, javax.swing.GroupLayout.PREFERRED_SIZE, 32, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addGap(0, 578, Short.MAX_VALUE))
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, 546, Short.MAX_VALUE)
+                .addComponent(jToolBar2, javax.swing.GroupLayout.PREFERRED_SIZE, 32, javax.swing.GroupLayout.PREFERRED_SIZE))
         );
 
         pack();
@@ -346,7 +367,7 @@ public class Main extends javax.swing.JFrame {
         size = drones.size();
 
         for (i = 0; i < nextStep(size); i++) {
-            drones.add(new Drone(map, graphic, new DroneNumber(drones.size() + 1), mutex, semaphore, 0, 0, 0, 0, 0, 0, datosX, datosY));
+            drones.add(new Drone(settings, map, graphic, new DroneNumber(drones.size() + 1), mutex, semaphore, vc, barrier));
         }
 
         reubuildDrones();
@@ -355,8 +376,10 @@ public class Main extends javax.swing.JFrame {
 
         activateButtons(size);
     }
-    
-    private void activateButtons (int size) {
+
+    private void activateButtons(int size) {
+        this.graphic.setMax(size);
+
         if (size >= 10) {
             jButton3.setEnabled(false);
             jMenuItem1.setEnabled(false);
@@ -364,7 +387,7 @@ public class Main extends javax.swing.JFrame {
             jButton3.setEnabled(true);
             jMenuItem1.setEnabled(true);
         }
-        
+
         if (size > 0) {
             jMenuItem2.setEnabled(true);
             jButton4.setEnabled(true);
@@ -459,7 +482,7 @@ public class Main extends javax.swing.JFrame {
     }
 
     private void jRadioButtonMenuItem1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItem1ActionPerformed
-        map.setGraphicEnable(!map.isGraphicEnable());
+        settings.setGraphicEnable(!settings.isGraphicEnable());
     }//GEN-LAST:event_jRadioButtonMenuItem1ActionPerformed
 
     private void deleteDrone() {
@@ -474,9 +497,11 @@ public class Main extends javax.swing.JFrame {
             reubuildDrones();
 
             size = drones.size();
-            
-            if (size == 0) map.repaint();
-            
+
+            if (size == 0) {
+                map.repaint();
+            }
+
             activateButtons(size);
         }
     }
@@ -490,23 +515,28 @@ public class Main extends javax.swing.JFrame {
     }//GEN-LAST:event_jMenuItem2ActionPerformed
 
     private void jRadioButtonMenuItem6ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItem6ActionPerformed
-        map.setSynchronizeOption(GATES);
+        settings.setSynchronizeOption(BARRIER);
+        graphic.changeMethod("Barrera");
     }//GEN-LAST:event_jRadioButtonMenuItem6ActionPerformed
 
     private void jRadioButtonMenuItem2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItem2ActionPerformed
-        map.setSynchronizeOption(MUTEX);
+        settings.setSynchronizeOption(MUTEX);
+        graphic.changeMethod("Mutex");
     }//GEN-LAST:event_jRadioButtonMenuItem2ActionPerformed
 
     private void jRadioButtonMenuItem3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItem3ActionPerformed
-        map.setSynchronizeOption(SEMAPHORE);
+        settings.setSynchronizeOption(SEMAPHORE);
+        graphic.changeMethod("Semáforo");
     }//GEN-LAST:event_jRadioButtonMenuItem3ActionPerformed
 
     private void jRadioButtonMenuItem4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItem4ActionPerformed
-        map.setSynchronizeOption(VC);
+        settings.setSynchronizeOption(CONDITIONS);
+        graphic.changeMethod("Variable de Condición");
     }//GEN-LAST:event_jRadioButtonMenuItem4ActionPerformed
 
     private void jRadioButtonMenuItem5ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItem5ActionPerformed
-        map.setSynchronizeOption(MONITORS);
+        settings.setSynchronizeOption(MONITORS);
+        graphic.changeMethod("Monitores");
     }//GEN-LAST:event_jRadioButtonMenuItem5ActionPerformed
 
     private void jButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton3ActionPerformed
@@ -522,35 +552,28 @@ public class Main extends javax.swing.JFrame {
     }//GEN-LAST:event_jMenuItem3ActionPerformed
 
     private void jRadioButtonMenuItem7ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItem7ActionPerformed
-        map.setSynchronizeOption(NONE);
+        settings.setSynchronizeOption(NONE);
+        graphic.changeMethod("Sin Sincronización");
     }//GEN-LAST:event_jRadioButtonMenuItem7ActionPerformed
 
     private void jMenuItem4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem4ActionPerformed
-        map.increaseSpeed();
+        settings.increaseSpeed();
     }//GEN-LAST:event_jMenuItem4ActionPerformed
 
     private void jMenuItem5ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem5ActionPerformed
-        map.decreaseSpeed();
+        settings.decreaseSpeed();
     }//GEN-LAST:event_jMenuItem5ActionPerformed
 
     private void jButton5ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton5ActionPerformed
-        map.increaseSpeed();
+        settings.increaseSpeed();
     }//GEN-LAST:event_jButton5ActionPerformed
 
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
-        map.decreaseSpeed();
+        settings.decreaseSpeed();
     }//GEN-LAST:event_jButton1ActionPerformed
 
     private void jButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton2ActionPerformed
-        //map.setGraphicEnable(!map.isGraphicEnable());
-        map.setPause(!map.isPause());
-        
-        if (map.isPause()) {
-            jButton2.setIcon(new javax.swing.ImageIcon(getClass().getResource("/cpproyecto1/images/play.png"))); // NOI18N
-        } else {
-            jButton2.setIcon(new javax.swing.ImageIcon(getClass().getResource("/cpproyecto1/images/pause.png"))); // NOI18N
-        }
-        
+        settings.setPause(!settings.isPause());
     }//GEN-LAST:event_jButton2ActionPerformed
 
     private void jButton6ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton6ActionPerformed
@@ -602,6 +625,9 @@ public class Main extends javax.swing.JFrame {
     private javax.swing.JButton jButton4;
     private javax.swing.JButton jButton5;
     private javax.swing.JButton jButton6;
+    private javax.swing.JLabel jLabel1;
+    private javax.swing.JLabel jLabel2;
+    private javax.swing.JLabel jLabel3;
     private javax.swing.JMenu jMenu1;
     private javax.swing.JMenu jMenu2;
     private javax.swing.JMenu jMenu3;
@@ -624,6 +650,34 @@ public class Main extends javax.swing.JFrame {
     private javax.swing.JToolBar.Separator jSeparator2;
     private javax.swing.JToolBar.Separator jSeparator3;
     private javax.swing.JToolBar jToolBar1;
+    private javax.swing.JToolBar jToolBar2;
     private javax.swing.ButtonGroup sinchronizeOptions;
     // End of variables declaration//GEN-END:variables
+
+    @Override
+    public void onPause() {
+        if (settings.isPause()) {
+            jButton2.setIcon(new javax.swing.ImageIcon(getClass().getResource("/cpproyecto1/images/play.png"))); // NOI18N
+        } else {
+            jButton2.setIcon(new javax.swing.ImageIcon(getClass().getResource("/cpproyecto1/images/pause.png"))); // NOI18N
+        }
+    }
+
+    @Override
+    public void onChange(int speed) {
+        jLabel2.setText("Speed: " + (settings.DEAFULT_SPEED - settings.getSpeed()));
+                
+        if (speed == 0) {
+            jButton5.setEnabled(false);
+            jMenuItem4.setEnabled(false);
+        } else {
+            jButton5.setEnabled(true);
+            jMenuItem4.setEnabled(true);
+        }
+    }
+
+    @Override
+    public void onChange(double rate) {
+        jLabel1.setText("Rate: " + rate + "%");
+    }
 }
