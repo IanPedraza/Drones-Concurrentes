@@ -192,8 +192,35 @@ public class Drone extends Thread {
     }
 
     private void monitors() {
-        synchronized(this){
+        /*synchronized (this) {
             move();
+        }*/
+        
+        if (x < minWidth || x >= maxWidth) {
+            pasoX *= -1;
+        }
+
+        if (y < minHeight || y >= maxHeight) {
+            pasoY *= -1;
+        }
+
+        x += pasoX;
+        y += pasoY;
+
+        if (settings.isGraphicEnable()) {
+            try {
+                synchronized (graphic) { graphic(); }
+            } catch (Exception e) {
+                settings.setPause(true);
+                JOptionPane.showMessageDialog(null, "Dos o más hilos entrarón en sección crítica");
+            }
+        }
+
+        synchronized(map) { map.repaint(); }
+
+        try {
+            Thread.sleep((int) (200 + Math.random() * settings.getSpeed()));
+        } catch (Exception e) {
         }
     }
 
